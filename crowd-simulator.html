@@ -1,0 +1,2027 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Simulation de foule</title>
+<style>
+  :root{
+    --bg: #0b1220;
+    --panel: #121a2b;
+    --panel-border: #223049;
+    --grid: #17223a;
+    --ink: #dbe4f3;
+    --dim: #7c8aa5;
+    --obstacle: #5eead4;
+    --spawn: #fb923c;
+    --exit: #34d399;
+    --sign: #a78bfa;
+    --accent: #60a5fa;
+    --danger: #f87171;
+    --mono: "SF Mono", "JetBrains Mono", Consolas, monospace;
+  }
+  *{ box-sizing:border-box; }
+  html,body{ height:100%; margin:0; }
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    overflow:hidden;
+  }
+  #app{
+    position:relative;
+    width:100vw; height:100vh;
+    display:flex;
+    flex-direction:column;
+  }
+
+  /* ---------- Toolbar ---------- */
+  #toolbar{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    padding:10px 14px;
+    background:var(--panel);
+    border-bottom:1px solid var(--panel-border);
+    z-index:5;
+    flex-wrap:wrap;
+  }
+  .brand{
+    font-family:var(--mono);
+    font-size:12px;
+    letter-spacing:1.5px;
+    color:var(--dim);
+    text-transform:uppercase;
+    margin-right:10px;
+    white-space:nowrap;
+  }
+  .brand b{ color:var(--ink); }
+  .btn{
+    appearance:none;
+    border:1px solid var(--panel-border);
+    background:#0e1626;
+    color:var(--ink);
+    font-size:13px;
+    padding:7px 12px;
+    border-radius:7px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    transition:border-color .15s, background .15s;
+  }
+  .btn:hover{ border-color:#3a4a6b; }
+  .btn.active{
+    background:#182238;
+    border-color:var(--accent);
+    color:#fff;
+    box-shadow:0 0 0 1px var(--accent) inset;
+  }
+  .btn .dot{
+    width:8px;height:8px;border-radius:50%;
+    background:currentColor;
+  }
+  .btn.mode-obstacle.active{ border-color:var(--obstacle); box-shadow:0 0 0 1px var(--obstacle) inset;}
+  .btn.mode-obstacle .dot{ background:var(--obstacle); }
+  .btn.mode-spawn.active{ border-color:var(--spawn); box-shadow:0 0 0 1px var(--spawn) inset;}
+  .btn.mode-spawn .dot{ background:var(--spawn); }
+  .btn.mode-exit.active{ border-color:var(--exit); box-shadow:0 0 0 1px var(--exit) inset;}
+  .btn.mode-exit .dot{ background:var(--exit); }
+  .btn.mode-sign.active{ border-color:var(--sign); box-shadow:0 0 0 1px var(--sign) inset;}
+  .btn.mode-sign .dot{ background:var(--sign); }
+  .btn.mode-delete.active{ border-color:var(--danger); box-shadow:0 0 0 1px var(--danger) inset;}
+  .btn.mode-delete .dot{ background:var(--danger); }
+  .sep{ width:1px; height:22px; background:var(--panel-border); margin:0 4px; }
+  #toolbar .spacer{ flex:1; }
+  #stats{
+    font-family:var(--mono);
+    font-size:11px;
+    color:var(--dim);
+    white-space:nowrap;
+  }
+  #stats b{ color:var(--ink); font-weight:600; }
+
+  /* ---------- Canvas area ---------- */
+  #stage{ position:relative; flex:1; overflow:hidden; }
+  canvas{ position:absolute; inset:0; display:block; cursor:crosshair; }
+
+  #hint{
+    position:absolute;
+    left:50%; top:16px; transform:translateX(-50%);
+    font-family:var(--mono);
+    font-size:12px;
+    color:var(--dim);
+    background:rgba(18,26,43,.85);
+    border:1px solid var(--panel-border);
+    padding:6px 12px;
+    border-radius:20px;
+    pointer-events:none;
+    transition:opacity .3s;
+    text-align:center;
+  }
+
+  /* ---------- Side panel ---------- */
+  #panel{
+    position:absolute;
+    top:16px; right:16px;
+    width:230px;
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:10px;
+    padding:14px;
+    display:none;
+    z-index:6;
+    box-shadow:0 8px 24px rgba(0,0,0,.35);
+  }
+  #panel.show{ display:block; }
+  #panel h3{
+    margin:0 0 10px 0;
+    font-size:12px;
+    letter-spacing:1px;
+    text-transform:uppercase;
+    color:var(--spawn);
+    font-family:var(--mono);
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  #panel .field{ margin-bottom:12px; }
+  #panel label{
+    display:flex;
+    justify-content:space-between;
+    font-size:12px;
+    color:var(--dim);
+    margin-bottom:4px;
+    font-family:var(--mono);
+  }
+  #panel label span.val{ color:var(--ink); }
+  #panel input[type=range]{
+    width:100%;
+    accent-color: var(--spawn);
+  }
+  #panel input[type=checkbox], #globalPanel input[type=checkbox]{
+    accent-color: var(--accent);
+    width:14px; height:14px;
+  }
+  #panel .behavior-field label, #globalPanel .behavior-field label{
+    align-items:center;
+  }
+  #panel .behavior-field .label-left, #globalPanel .behavior-field .label-left{
+    display:flex; align-items:center; gap:6px;
+  }
+  #panel .behavior-field input[type=range], #globalPanel .behavior-field input[type=range]{ margin-top:2px; }
+  #panel .behavior-field input[type=range]:disabled, #globalPanel .behavior-field input[type=range]:disabled{ opacity:.35; }
+  #panel input[type=text], #exitPanel input[type=text]{
+    width:100%;
+    background:#0e1626;
+    border:1px solid var(--panel-border);
+    color:var(--ink);
+    border-radius:6px;
+    padding:6px 8px;
+    font-size:13px;
+    font-family:inherit;
+  }
+  #panel input[type=color], #exitPanel input[type=color]{
+    width:100%;
+    height:32px;
+    background:#0e1626;
+    border:1px solid var(--panel-border);
+    border-radius:6px;
+    padding:2px;
+    cursor:pointer;
+  }
+  #exitPanel input[type=range]{
+    width:100%;
+    accent-color: var(--exit);
+  }
+  #exitPanel input[type=checkbox]{ accent-color: var(--exit); width:14px; height:14px; }
+  #exitPanel label.val-label{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+  }
+  #exitPanel .note{
+    font-size:10px;
+    color:var(--dim);
+    line-height:1.4;
+  }
+  #panel .delete-btn{
+    width:100%;
+    margin-top:4px;
+    background:#2a1420;
+    border:1px solid #5a2233;
+    color:var(--danger);
+  }
+  #panel .delete-btn:hover{ border-color:var(--danger); }
+
+  #exitPanel{
+    position:absolute;
+    top:16px; right:16px;
+    width:230px;
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:10px;
+    padding:14px;
+    display:none;
+    z-index:6;
+    box-shadow:0 8px 24px rgba(0,0,0,.35);
+  }
+  #exitPanel.show{ display:block; }
+  #exitPanel h3{
+    margin:0 0 10px 0;
+    font-size:12px;
+    letter-spacing:1px;
+    text-transform:uppercase;
+    color:var(--exit);
+    font-family:var(--mono);
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  #exitPanel .field{ margin-bottom:12px; }
+  #exitPanel label{
+    display:block;
+    font-size:12px;
+    color:var(--dim);
+    margin-bottom:4px;
+    font-family:var(--mono);
+  }
+  #exitPanel .delete-btn{
+    width:100%;
+    margin-top:4px;
+    background:#2a1420;
+    border:1px solid #5a2233;
+    color:var(--danger);
+  }
+  #exitPanel .delete-btn:hover{ border-color:var(--danger); }
+
+  #signPanel{
+    position:absolute;
+    top:16px; right:16px;
+    width:240px;
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:10px;
+    padding:14px;
+    display:none;
+    z-index:6;
+    box-shadow:0 8px 24px rgba(0,0,0,.35);
+  }
+  #signPanel.show{ display:block; }
+  #signPanel h3{
+    margin:0 0 10px 0;
+    font-size:12px;
+    letter-spacing:1px;
+    text-transform:uppercase;
+    color:var(--sign);
+    font-family:var(--mono);
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  #signPanel .field{ margin-bottom:12px; }
+  #signPanel label{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-size:12px;
+    color:var(--dim);
+    margin-bottom:4px;
+    font-family:var(--mono);
+  }
+  #signPanel label span.val{ color:var(--ink); }
+  #signPanel input[type=range]{
+    width:100%;
+    accent-color: var(--sign);
+  }
+  #signPanel input[type=checkbox]{ accent-color: var(--sign); width:14px; height:14px; }
+  #signPanel .note{
+    font-size:10px;
+    color:var(--dim);
+    margin:-6px 0 10px 0;
+    line-height:1.4;
+  }
+  #signPanel .delete-btn{
+    width:100%;
+    margin-top:4px;
+    background:#2a1420;
+    border:1px solid #5a2233;
+    color:var(--danger);
+  }
+  #signPanel .delete-btn:hover{ border-color:var(--danger); }
+  #signExitsList{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    max-height:120px;
+    overflow-y:auto;
+  }
+  #signExitsList .exit-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:12px;
+    color:var(--ink);
+    font-family:var(--mono);
+  }
+  #signExitsList .exit-row input{ accent-color: var(--sign); }
+  #signExitsList .empty{
+    color:var(--dim);
+    font-size:11px;
+    font-family:var(--mono);
+  }
+
+  #globalPanel{
+    position:absolute;
+    top:16px; right:16px;
+    width:240px;
+    background:var(--panel);
+    border:1px solid var(--panel-border);
+    border-radius:10px;
+    padding:14px;
+    display:none;
+    z-index:6;
+    box-shadow:0 8px 24px rgba(0,0,0,.35);
+  }
+  #globalPanel.show{ display:block; }
+  #globalPanel h3{
+    margin:0 0 6px 0;
+    font-size:12px;
+    letter-spacing:1px;
+    text-transform:uppercase;
+    color:var(--accent);
+    font-family:var(--mono);
+    display:flex; align-items:center; justify-content:space-between;
+  }
+  #globalPanel .note{
+    font-size:11px;
+    color:var(--dim);
+    margin-bottom:12px;
+    line-height:1.4;
+  }
+  #globalPanel .field{ margin-bottom:12px; }
+  #globalPanel label{
+    display:flex;
+    justify-content:space-between;
+    font-size:12px;
+    color:var(--dim);
+    margin-bottom:4px;
+    font-family:var(--mono);
+  }
+  #globalPanel label span.val{ color:var(--ink); }
+  #globalPanel input[type=range]{
+    width:100%;
+    accent-color: var(--accent);
+  }
+
+  #exitsList{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    max-height:120px;
+    overflow-y:auto;
+  }
+  #exitsList .exit-row{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:12px;
+    color:var(--ink);
+    font-family:var(--mono);
+  }
+  #exitsList .exit-row input{ accent-color: var(--exit); }
+  #exitsList .empty{
+    color:var(--dim);
+    font-size:11px;
+    font-family:var(--mono);
+  }
+
+  #legend{
+    position:absolute;
+    left:16px; bottom:16px;
+    font-family:var(--mono);
+    font-size:11px;
+    color:var(--dim);
+    background:rgba(18,26,43,.7);
+    border:1px solid var(--panel-border);
+    border-radius:8px;
+    padding:8px 10px;
+    line-height:1.7;
+  }
+  #legend .k{ display:inline-block; width:10px;height:10px;border-radius:50%; margin-right:6px; vertical-align:middle;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="toolbar">
+    <div class="brand">Simu <b>Foule</b></div>
+
+    <button class="btn mode-obstacle" data-mode="obstacle">
+      <span class="dot"></span> Obstacle
+    </button>
+    <button class="btn mode-spawn" data-mode="spawn">
+      <span class="dot"></span> Spawn
+    </button>
+    <button class="btn mode-exit" data-mode="exit">
+      <span class="dot"></span> Sortie
+    </button>
+    <button class="btn mode-sign" data-mode="sign">
+      <span class="dot"></span> Panneau
+    </button>
+    <button class="btn mode-delete" data-mode="delete">
+      <span class="dot"></span> Supprimer
+    </button>
+
+    <div class="sep"></div>
+
+    <button class="btn" id="btnGlobalSettings">⚙ Tous les spawns</button>
+
+    <div class="sep"></div>
+
+    <button class="btn" id="btnPlay">⏸ Pause</button>
+    <button class="btn" id="btnClearParticles">Vider les personnages</button>
+    <button class="btn" id="btnClearAll">Tout effacer</button>
+
+    <div class="sep"></div>
+
+    <button class="btn" id="btnExport">💾 Exporter</button>
+    <button class="btn" id="btnImport">📂 Importer</button>
+    <input type="file" id="importFileInput" accept=".json,application/json" style="display:none">
+
+    <div class="spacer"></div>
+    <div id="stats"></div>
+  </div>
+
+  <div id="stage">
+    <canvas id="canvas"></canvas>
+    <div id="hint"></div>
+
+    <div id="panel">
+      <h3>Point de spawn <span id="panelClose" style="cursor:pointer;color:var(--dim)">✕</span></h3>
+      <div class="field">
+        <label>Débit (perso/s) <span class="val" id="rateVal"></span></label>
+        <input type="range" id="rateRange" min="0.2" max="30" step="0.2">
+      </div>
+      <div class="field">
+        <label>Taille (rayon) <span class="val" id="sizeVal"></span></label>
+        <input type="range" id="sizeRange" min="3" max="14" step="0.5">
+      </div>
+      <div class="field">
+        <label>Vitesse (px/s) <span class="val" id="speedVal"></span></label>
+        <input type="range" id="speedRange" min="15" max="220" step="1">
+      </div>
+      <div class="field">
+        <label>Couleur des personnages</label>
+        <input type="color" id="particleColorInput">
+      </div>
+      <div class="field behavior-field">
+        <label>
+          <span class="label-left"><input type="checkbox" id="personalSpaceEnabled"> Sphère d'intimité</span>
+          <span class="val" id="personalSpaceVal"></span>
+        </label>
+        <input type="range" id="personalSpaceRange" min="0" max="50" step="1">
+      </div>
+      <div class="field behavior-field">
+        <label>
+          <span class="label-left"><input type="checkbox" id="alignmentEnabled"> Alignement (même direction)</span>
+          <span class="val" id="alignmentVal"></span>
+        </label>
+        <input type="range" id="alignmentRange" min="0" max="80" step="1">
+      </div>
+      <div class="field behavior-field">
+        <label>
+          <span class="label-left"><input type="checkbox" id="impatienceEnabled"> Impatience</span>
+          <span class="val" id="impatienceVal"></span>
+        </label>
+        <input type="range" id="impatienceRange" min="0.5" max="8" step="0.5">
+        <div style="font-size:10px;color:var(--dim);margin-top:3px;">Délai bloqué avant de pousser plus fort dans la foule</div>
+      </div>
+      <div class="field behavior-field">
+        <label>
+          <span class="label-left"><input type="checkbox" id="followFastEnabled"> Suivre les voisins rapides</span>
+          <span class="val" id="followFastVal"></span>
+        </label>
+        <input type="range" id="followFastRange" min="0" max="100" step="2">
+        <div style="font-size:10px;color:var(--dim);margin-top:3px;">Se rapproche et accélère pour suivre un voisin nettement plus rapide, dans le rayon donné</div>
+      </div>
+      <div class="field">
+        <label>Sorties visées</label>
+        <div id="exitsList"></div>
+      </div>
+      <button class="btn delete-btn" id="deleteSpawner">Supprimer ce point</button>
+    </div>
+
+    <div id="exitPanel">
+      <h3>Sortie <span id="exitPanelClose" style="cursor:pointer;color:var(--dim)">✕</span></h3>
+      <div class="field">
+        <label>Libellé</label>
+        <input type="text" id="exitLabelInput" maxlength="20">
+      </div>
+      <div class="field">
+        <label>Couleur</label>
+        <input type="color" id="exitColorInput">
+      </div>
+      <div class="field">
+        <label class="val-label">Rayon de visibilité <span class="val" id="exitVisibilityVal"></span></label>
+        <input type="range" id="exitVisibilityRange" min="20" max="500" step="5">
+        <div class="note" style="margin:4px 0 0 0;">Seul moyen pour un personnage de se diriger directement vers cette sortie : il doit pouvoir la voir (sans obstacle entre les deux). Sinon, il ne peut avancer vers elle qu'en suivant la direction d'un panneau.</div>
+      </div>
+      <div class="field">
+        <label style="justify-content:flex-start;gap:8px;">
+          <input type="checkbox" id="exitShowVisibility"> Voir la visibilité
+        </label>
+      </div>
+      <button class="btn delete-btn" id="deleteExit">Supprimer cette sortie</button>
+    </div>
+
+    <div id="globalPanel">
+      <h3>Tous les spawns <span id="globalPanelClose" style="cursor:pointer;color:var(--dim)">✕</span></h3>
+      <div class="note">S'applique immédiatement à tous les points de spawn existants, et sert de valeur de départ pour les nouveaux. Chaque point reste modifiable individuellement ensuite.</div>
+      <div class="field">
+        <label>Débit (perso/s) <span class="val" id="globalRateVal"></span></label>
+        <input type="range" id="globalRateRange" min="0.2" max="30" step="0.2">
+      </div>
+      <div class="field">
+        <label>Taille (rayon) <span class="val" id="globalSizeVal"></span></label>
+        <input type="range" id="globalSizeRange" min="3" max="14" step="0.5">
+      </div>
+      <div class="field">
+        <label>Vitesse (px/s) <span class="val" id="globalSpeedVal"></span></label>
+        <input type="range" id="globalSpeedRange" min="15" max="220" step="1">
+      </div>
+      <div class="field behavior-field">
+        <label>
+          <span class="label-left"><input type="checkbox" id="globalPersonalSpaceEnabled"> Sphère d'intimité</span>
+          <span class="val" id="globalPersonalSpaceVal"></span>
+        </label>
+        <input type="range" id="globalPersonalSpaceRange" min="0" max="50" step="1">
+      </div>
+      <div class="field behavior-field">
+        <label>
+          <span class="label-left"><input type="checkbox" id="globalAlignmentEnabled"> Alignement (même direction)</span>
+          <span class="val" id="globalAlignmentVal"></span>
+        </label>
+        <input type="range" id="globalAlignmentRange" min="0" max="80" step="1">
+      </div>
+      <div class="field behavior-field">
+        <label>
+          <span class="label-left"><input type="checkbox" id="globalImpatienceEnabled"> Impatience</span>
+          <span class="val" id="globalImpatienceVal"></span>
+        </label>
+        <input type="range" id="globalImpatienceRange" min="0.5" max="8" step="0.5">
+      </div>
+      <div class="field behavior-field">
+        <label>
+          <span class="label-left"><input type="checkbox" id="globalFollowFastEnabled"> Suivre les voisins rapides</span>
+          <span class="val" id="globalFollowFastVal"></span>
+        </label>
+        <input type="range" id="globalFollowFastRange" min="0" max="100" step="2">
+      </div>
+    </div>
+
+    <div id="signPanel">
+      <h3>Panneau de direction <span id="signPanelClose" style="cursor:pointer;color:var(--dim)">✕</span></h3>
+      <div class="note">Guide les personnages selon deux cas : sans sortie assignée, ils prennent la direction du panneau ou l'une des sorties indiquées dès qu'ils le voient. Avec une sortie déjà assignée qui correspond à ce panneau, ils s'approchent d'abord du panneau (rayon d'approche), puis suivent sa flèche.</div>
+      <div class="field">
+        <label>Rayon de visibilité <span class="val" id="signRadiusVal"></span></label>
+        <input type="range" id="signRadiusRange" min="20" max="500" step="5">
+      </div>
+      <div class="field">
+        <label>Rayon d'approche <span class="val" id="signApproachVal"></span></label>
+        <input type="range" id="signApproachRange" min="5" max="200" step="5">
+      </div>
+      <div class="field">
+        <label style="justify-content:flex-start;gap:8px;">
+          <input type="checkbox" id="signShowVisibility"> Voir la visibilité
+        </label>
+      </div>
+      <div class="field">
+        <label>Sorties indiquées</label>
+        <div class="note" style="margin:0 0 6px 0;">Idéalement toutes dans la direction de la flèche.</div>
+        <div id="signExitsList"></div>
+      </div>
+      <button class="btn delete-btn" id="deleteSign">Supprimer ce panneau</button>
+    </div>
+
+    <div id="legend">
+      <div><span class="k" style="background:var(--obstacle)"></span>Obstacle (ligne)</div>
+      <div><span class="k" style="background:var(--spawn)"></span>Point de spawn (flèche = direction)</div>
+      <div><span class="k" style="background:var(--exit)"></span>Sortie (libellé et couleur modifiables)</div>
+      <div><span class="k" style="background:var(--sign)"></span>Panneau de direction (rayon + sorties)</div>
+      <div><span class="k" style="background:#9db4d8"></span>Personnage (couleur réglable par spawn)</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const stage = document.getElementById('stage');
+  const hint = document.getElementById('hint');
+  const statsEl = document.getElementById('stats');
+
+  // ---------- state ----------
+  let mode = 'obstacle';
+  let playing = true;
+  let obstacles = [];   // {x1,y1,x2,y2}
+  let spawners = [];    // {id,x,y,angle,rate,size,speed,acc,exits:[exitId,...]}
+  let exits = [];       // {id,x,y,size}
+  let signs = [];        // {id,x,y,angle,radius,exits:[],showVisibility}
+  let particles = [];   // {x,y,vx,vy,r,maxSpeed,dx,dy,targetExitId}
+  let nextSpawnerId = 1;
+  let nextExitId = 1;
+  let nextSignId = 1;
+  let selectedSpawnerId = null;
+  let selectedExitId = null;
+  let selectedSignId = null;
+
+  let drawingObstacle = null; // {x1,y1,x2,y2}
+  let draggingHandleId = null;
+  let draggingSpawnerId = null; // moving a spawn point itself
+  let draggingExitId = null;
+  let draggingSignId = null;
+  let draggingSignHandleId = null;
+  let dragOffset = {x:0,y:0};
+
+  const MAX_PARTICLES = 700;
+  const HANDLE_DIST = 34;
+  const EXIT_SIZE = 11;
+  const THROUGHPUT_WINDOW = 10000; // ms
+
+  let defaultSpawnerSettings = {
+    rate: 2, size: 6, speed: 70,
+    personalSpaceEnabled: false, personalSpace: 20,
+    alignmentEnabled: false, alignmentDistance: 30,
+    impatienceEnabled: false, impatienceDelay: 2.5,
+    followFastEnabled: false, followFastRadius: 40
+  };
+
+  // ---------- canvas sizing ----------
+  function resize(){
+    const rect = stage.getBoundingClientRect();
+    canvas.width = rect.width;
+    canvas.height = rect.height;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---------- helpers ----------
+  function dist(x1,y1,x2,y2){ return Math.hypot(x2-x1,y2-y1); }
+
+  function closestPointOnSegment(px,py,x1,y1,x2,y2){
+    const dx=x2-x1, dy=y2-y1;
+    const len2 = dx*dx+dy*dy;
+    let t = len2 === 0 ? 0 : ((px-x1)*dx + (py-y1)*dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    const cx = x1 + t*dx, cy = y1 + t*dy;
+    return {x:cx, y:cy, d:dist(px,py,cx,cy)};
+  }
+
+  function spawnerAt(x,y){
+    for(let i=spawners.length-1;i>=0;i--){
+      const s = spawners[i];
+      if(dist(x,y,s.x,s.y) <= s.size + 8) return s;
+    }
+    return null;
+  }
+
+  function handleAt(x,y){
+    for(let i=spawners.length-1;i>=0;i--){
+      const s = spawners[i];
+      const hx = s.x + Math.cos(s.angle)*HANDLE_DIST;
+      const hy = s.y + Math.sin(s.angle)*HANDLE_DIST;
+      if(dist(x,y,hx,hy) <= 8) return s;
+    }
+    return null;
+  }
+
+  function obstacleAt(x,y){
+    for(let i=obstacles.length-1;i>=0;i--){
+      const o = obstacles[i];
+      const cp = closestPointOnSegment(x,y,o.x1,o.y1,o.x2,o.y2);
+      if(cp.d <= 7) return o;
+    }
+    return null;
+  }
+
+  function exitAt(x,y){
+    for(let i=exits.length-1;i>=0;i--){
+      const ex = exits[i];
+      if(dist(x,y,ex.x,ex.y) <= ex.size + 8) return ex;
+    }
+    return null;
+  }
+
+  function signAt(x,y){
+    for(let i=signs.length-1;i>=0;i--){
+      const sg = signs[i];
+      if(dist(x,y,sg.x,sg.y) <= 14) return sg;
+    }
+    return null;
+  }
+  function signHandleAt(x,y){
+    for(let i=signs.length-1;i>=0;i--){
+      const sg = signs[i];
+      const hx = sg.x + Math.cos(sg.angle)*HANDLE_DIST;
+      const hy = sg.y + Math.sin(sg.angle)*HANDLE_DIST;
+      if(dist(x,y,hx,hy) <= 8) return sg;
+    }
+    return null;
+  }
+
+  // returns t in [0,1] along segment AB where it crosses segment CD, or null if no crossing
+  function segSegIntersectT(ax,ay,bx,by,cx,cy,dx,dy){
+    const rX=bx-ax, rY=by-ay, sX=dx-cx, sY=dy-cy;
+    const denom = rX*sY - rY*sX;
+    if(Math.abs(denom) < 1e-9) return null;
+    const t = ((cx-ax)*sY - (cy-ay)*sX) / denom;
+    const u = ((cx-ax)*rY - (cy-ay)*rX) / denom;
+    if(t>=0 && t<=1 && u>=0 && u<=1) return t;
+    return null;
+  }
+  function hasLineOfSight(x1,y1,x2,y2){
+    for(const o of obstacles){
+      if(segSegIntersectT(x1,y1,x2,y2,o.x1,o.y1,o.x2,o.y2) != null) return false;
+    }
+    return true;
+  }
+
+  function mousePos(e){
+    const r = canvas.getBoundingClientRect();
+    return {x: e.clientX - r.left, y: e.clientY - r.top};
+  }
+
+  // ---------- UI: mode buttons ----------
+  const modeButtons = document.querySelectorAll('[data-mode]');
+  function setMode(m){
+    mode = m;
+    modeButtons.forEach(b => b.classList.toggle('active', b.dataset.mode === m));
+    updateHint();
+    if(m !== 'spawn'){ closePanel(); }
+    if(m !== 'exit'){ closeExitPanel(); }
+    if(m !== 'sign'){ closeSignPanel(); }
+    closeGlobalPanel();
+  }
+  modeButtons.forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+
+  function updateHint(){
+    const texts = {
+      obstacle: 'Cliquez-glissez pour tracer un obstacle (mur)',
+      spawn: 'Cliquez pour créer un point de spawn · cliquez un point existant pour le régler · glissez la flèche pour orienter',
+      exit: 'Cliquez pour créer une sortie · glissez un point existant pour le déplacer',
+      sign: 'Cliquez pour créer un panneau · glissez la flèche pour orienter · cliquez un panneau existant pour le régler',
+      delete: 'Cliquez sur un obstacle, un point de spawn, une sortie ou un panneau pour le supprimer'
+    };
+    hint.textContent = texts[mode] || '';
+  }
+
+  // ---------- panel ----------
+  const panel = document.getElementById('panel');
+  const rateRange = document.getElementById('rateRange');
+  const sizeRange = document.getElementById('sizeRange');
+  const speedRange = document.getElementById('speedRange');
+  const rateVal = document.getElementById('rateVal');
+  const sizeVal = document.getElementById('sizeVal');
+  const speedVal = document.getElementById('speedVal');
+  const exitsList = document.getElementById('exitsList');
+  const particleColorInput = document.getElementById('particleColorInput');
+  const personalSpaceEnabled = document.getElementById('personalSpaceEnabled');
+  const personalSpaceRange = document.getElementById('personalSpaceRange');
+  const personalSpaceVal = document.getElementById('personalSpaceVal');
+  const alignmentEnabled = document.getElementById('alignmentEnabled');
+  const alignmentRange = document.getElementById('alignmentRange');
+  const alignmentVal = document.getElementById('alignmentVal');
+  const impatienceEnabled = document.getElementById('impatienceEnabled');
+  const impatienceRange = document.getElementById('impatienceRange');
+  const impatienceVal = document.getElementById('impatienceVal');
+  const followFastEnabled = document.getElementById('followFastEnabled');
+  const followFastRange = document.getElementById('followFastRange');
+  const followFastVal = document.getElementById('followFastVal');
+
+  function openPanel(spawner){
+    selectedSpawnerId = spawner.id;
+    closeExitPanel();
+    closeGlobalPanel();
+    closeSignPanel();
+    panel.classList.add('show');
+    rateRange.value = spawner.rate;
+    sizeRange.value = spawner.size;
+    speedRange.value = spawner.speed;
+    particleColorInput.value = spawner.color;
+    personalSpaceEnabled.checked = spawner.personalSpaceEnabled;
+    personalSpaceRange.value = spawner.personalSpace;
+    personalSpaceRange.disabled = !spawner.personalSpaceEnabled;
+    alignmentEnabled.checked = spawner.alignmentEnabled;
+    alignmentRange.value = spawner.alignmentDistance;
+    alignmentRange.disabled = !spawner.alignmentEnabled;
+    impatienceEnabled.checked = spawner.impatienceEnabled;
+    impatienceRange.value = spawner.impatienceDelay;
+    impatienceRange.disabled = !spawner.impatienceEnabled;
+    followFastEnabled.checked = spawner.followFastEnabled;
+    followFastRange.value = spawner.followFastRadius;
+    followFastRange.disabled = !spawner.followFastEnabled;
+    refreshPanelLabels(spawner);
+    refreshExitsList(spawner);
+  }
+  function closePanel(){
+    selectedSpawnerId = null;
+    panel.classList.remove('show');
+  }
+  function refreshPanelLabels(s){
+    rateVal.textContent = s.rate.toFixed(1);
+    sizeVal.textContent = s.size.toFixed(1);
+    speedVal.textContent = Math.round(s.speed);
+    personalSpaceVal.textContent = Math.round(s.personalSpace) + 'px';
+    alignmentVal.textContent = Math.round(s.alignmentDistance) + 'px';
+    impatienceVal.textContent = s.impatienceDelay.toFixed(1) + 's';
+    followFastVal.textContent = Math.round(s.followFastRadius) + 'px';
+  }
+  function refreshExitsList(spawner){
+    exitsList.innerHTML = '';
+    if(exits.length === 0){
+      const p = document.createElement('div');
+      p.className = 'empty';
+      p.textContent = 'Aucune sortie créée (mode Sortie) — sans sélection, ce point garde sa direction fixe.';
+      exitsList.appendChild(p);
+      return;
+    }
+    exits.forEach((ex, i) => {
+      const row = document.createElement('label');
+      row.className = 'exit-row';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = spawner.exits.includes(ex.id);
+      cb.addEventListener('change', ()=>{
+        if(cb.checked){
+          if(!spawner.exits.includes(ex.id)) spawner.exits.push(ex.id);
+        } else {
+          spawner.exits = spawner.exits.filter(id => id !== ex.id);
+        }
+      });
+      const txt = document.createElement('span');
+      txt.textContent = ex.label;
+      row.appendChild(cb);
+      row.appendChild(txt);
+      exitsList.appendChild(row);
+    });
+  }
+  function selectedSpawner(){
+    return spawners.find(s => s.id === selectedSpawnerId) || null;
+  }
+  [rateRange,sizeRange,speedRange].forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      const s = selectedSpawner();
+      if(!s) return;
+      s.rate = parseFloat(rateRange.value);
+      s.size = parseFloat(sizeRange.value);
+      s.speed = parseFloat(speedRange.value);
+      refreshPanelLabels(s);
+    });
+  });
+  particleColorInput.addEventListener('input', ()=>{
+    const s = selectedSpawner();
+    if(!s) return;
+    s.color = particleColorInput.value;
+  });
+  personalSpaceEnabled.addEventListener('change', ()=>{
+    const s = selectedSpawner();
+    if(!s) return;
+    s.personalSpaceEnabled = personalSpaceEnabled.checked;
+    personalSpaceRange.disabled = !s.personalSpaceEnabled;
+  });
+  personalSpaceRange.addEventListener('input', ()=>{
+    const s = selectedSpawner();
+    if(!s) return;
+    s.personalSpace = parseFloat(personalSpaceRange.value);
+    refreshPanelLabels(s);
+  });
+  alignmentEnabled.addEventListener('change', ()=>{
+    const s = selectedSpawner();
+    if(!s) return;
+    s.alignmentEnabled = alignmentEnabled.checked;
+    alignmentRange.disabled = !s.alignmentEnabled;
+  });
+  alignmentRange.addEventListener('input', ()=>{
+    const s = selectedSpawner();
+    if(!s) return;
+    s.alignmentDistance = parseFloat(alignmentRange.value);
+    refreshPanelLabels(s);
+  });
+  impatienceEnabled.addEventListener('change', ()=>{
+    const s = selectedSpawner();
+    if(!s) return;
+    s.impatienceEnabled = impatienceEnabled.checked;
+    impatienceRange.disabled = !s.impatienceEnabled;
+  });
+  impatienceRange.addEventListener('input', ()=>{
+    const s = selectedSpawner();
+    if(!s) return;
+    s.impatienceDelay = parseFloat(impatienceRange.value);
+    refreshPanelLabels(s);
+  });
+  followFastEnabled.addEventListener('change', ()=>{
+    const s = selectedSpawner();
+    if(!s) return;
+    s.followFastEnabled = followFastEnabled.checked;
+    followFastRange.disabled = !s.followFastEnabled;
+  });
+  followFastRange.addEventListener('input', ()=>{
+    const s = selectedSpawner();
+    if(!s) return;
+    s.followFastRadius = parseFloat(followFastRange.value);
+    refreshPanelLabels(s);
+  });
+  document.getElementById('panelClose').addEventListener('click', closePanel);
+  document.getElementById('deleteSpawner').addEventListener('click', ()=>{
+    spawners = spawners.filter(s => s.id !== selectedSpawnerId);
+    closePanel();
+  });
+
+  // ---------- exit panel ----------
+  const exitPanel = document.getElementById('exitPanel');
+  const exitLabelInput = document.getElementById('exitLabelInput');
+  const exitColorInput = document.getElementById('exitColorInput');
+  const exitVisibilityRange = document.getElementById('exitVisibilityRange');
+  const exitVisibilityVal = document.getElementById('exitVisibilityVal');
+  const exitShowVisibility = document.getElementById('exitShowVisibility');
+
+  function openExitPanel(ex){
+    selectedExitId = ex.id;
+    closePanel();
+    closeGlobalPanel();
+    closeSignPanel();
+    exitPanel.classList.add('show');
+    exitLabelInput.value = ex.label;
+    exitColorInput.value = ex.color;
+    exitVisibilityRange.value = ex.visibilityRadius;
+    exitVisibilityVal.textContent = Math.round(ex.visibilityRadius) + 'px';
+    exitShowVisibility.checked = ex.showVisibility;
+  }
+  function closeExitPanel(){
+    selectedExitId = null;
+    exitPanel.classList.remove('show');
+  }
+  function selectedExit(){
+    return exits.find(e => e.id === selectedExitId) || null;
+  }
+  exitLabelInput.addEventListener('input', ()=>{
+    const ex = selectedExit();
+    if(!ex) return;
+    ex.label = exitLabelInput.value.trim() || ('Sortie ' + ex.id);
+  });
+  exitColorInput.addEventListener('input', ()=>{
+    const ex = selectedExit();
+    if(!ex) return;
+    ex.color = exitColorInput.value;
+  });
+  exitVisibilityRange.addEventListener('input', ()=>{
+    const ex = selectedExit();
+    if(!ex) return;
+    ex.visibilityRadius = parseFloat(exitVisibilityRange.value);
+    exitVisibilityVal.textContent = Math.round(ex.visibilityRadius) + 'px';
+  });
+  exitShowVisibility.addEventListener('change', ()=>{
+    const ex = selectedExit();
+    if(!ex) return;
+    ex.showVisibility = exitShowVisibility.checked;
+  });
+  document.getElementById('exitPanelClose').addEventListener('click', closeExitPanel);
+  document.getElementById('deleteExit').addEventListener('click', ()=>{
+    const ex = selectedExit();
+    if(ex){
+      exits = exits.filter(e => e.id !== ex.id);
+      spawners.forEach(sp => { sp.exits = sp.exits.filter(id => id !== ex.id); });
+    }
+    closeExitPanel();
+  });
+
+  // ---------- global spawn settings panel ----------
+  const globalPanel = document.getElementById('globalPanel');
+  const globalRateRange = document.getElementById('globalRateRange');
+  const globalSizeRange = document.getElementById('globalSizeRange');
+  const globalSpeedRange = document.getElementById('globalSpeedRange');
+  const globalRateVal = document.getElementById('globalRateVal');
+  const globalSizeVal = document.getElementById('globalSizeVal');
+  const globalSpeedVal = document.getElementById('globalSpeedVal');
+  const globalPersonalSpaceEnabled = document.getElementById('globalPersonalSpaceEnabled');
+  const globalPersonalSpaceRange = document.getElementById('globalPersonalSpaceRange');
+  const globalPersonalSpaceVal = document.getElementById('globalPersonalSpaceVal');
+  const globalAlignmentEnabled = document.getElementById('globalAlignmentEnabled');
+  const globalAlignmentRange = document.getElementById('globalAlignmentRange');
+  const globalAlignmentVal = document.getElementById('globalAlignmentVal');
+  const globalImpatienceEnabled = document.getElementById('globalImpatienceEnabled');
+  const globalImpatienceRange = document.getElementById('globalImpatienceRange');
+  const globalImpatienceVal = document.getElementById('globalImpatienceVal');
+  const globalFollowFastEnabled = document.getElementById('globalFollowFastEnabled');
+  const globalFollowFastRange = document.getElementById('globalFollowFastRange');
+  const globalFollowFastVal = document.getElementById('globalFollowFastVal');
+
+  function refreshGlobalLabels(){
+    globalRateVal.textContent = defaultSpawnerSettings.rate.toFixed(1);
+    globalSizeVal.textContent = defaultSpawnerSettings.size.toFixed(1);
+    globalSpeedVal.textContent = Math.round(defaultSpawnerSettings.speed);
+    globalPersonalSpaceVal.textContent = Math.round(defaultSpawnerSettings.personalSpace) + 'px';
+    globalAlignmentVal.textContent = Math.round(defaultSpawnerSettings.alignmentDistance) + 'px';
+    globalImpatienceVal.textContent = defaultSpawnerSettings.impatienceDelay.toFixed(1) + 's';
+    globalFollowFastVal.textContent = Math.round(defaultSpawnerSettings.followFastRadius) + 'px';
+  }
+  function openGlobalPanel(){
+    closePanel();
+    closeExitPanel();
+    closeSignPanel();
+    globalRateRange.value = defaultSpawnerSettings.rate;
+    globalSizeRange.value = defaultSpawnerSettings.size;
+    globalSpeedRange.value = defaultSpawnerSettings.speed;
+    globalPersonalSpaceEnabled.checked = defaultSpawnerSettings.personalSpaceEnabled;
+    globalPersonalSpaceRange.value = defaultSpawnerSettings.personalSpace;
+    globalPersonalSpaceRange.disabled = !defaultSpawnerSettings.personalSpaceEnabled;
+    globalAlignmentEnabled.checked = defaultSpawnerSettings.alignmentEnabled;
+    globalAlignmentRange.value = defaultSpawnerSettings.alignmentDistance;
+    globalAlignmentRange.disabled = !defaultSpawnerSettings.alignmentEnabled;
+    globalImpatienceEnabled.checked = defaultSpawnerSettings.impatienceEnabled;
+    globalImpatienceRange.value = defaultSpawnerSettings.impatienceDelay;
+    globalImpatienceRange.disabled = !defaultSpawnerSettings.impatienceEnabled;
+    globalFollowFastEnabled.checked = defaultSpawnerSettings.followFastEnabled;
+    globalFollowFastRange.value = defaultSpawnerSettings.followFastRadius;
+    globalFollowFastRange.disabled = !defaultSpawnerSettings.followFastEnabled;
+    refreshGlobalLabels();
+    globalPanel.classList.add('show');
+  }
+  function closeGlobalPanel(){
+    globalPanel.classList.remove('show');
+  }
+  document.getElementById('btnGlobalSettings').addEventListener('click', ()=>{
+    if(globalPanel.classList.contains('show')) closeGlobalPanel();
+    else openGlobalPanel();
+  });
+  document.getElementById('globalPanelClose').addEventListener('click', closeGlobalPanel);
+
+  [[globalRateRange,'rate'],[globalSizeRange,'size'],[globalSpeedRange,'speed'],
+   [globalPersonalSpaceRange,'personalSpace'],[globalAlignmentRange,'alignmentDistance'],
+   [globalImpatienceRange,'impatienceDelay'],[globalFollowFastRange,'followFastRadius']].forEach(([inp,key])=>{
+    inp.addEventListener('input', ()=>{
+      const v = parseFloat(inp.value);
+      defaultSpawnerSettings[key] = v;
+      spawners.forEach(s => { s[key] = v; });
+      refreshGlobalLabels();
+    });
+  });
+  globalPersonalSpaceEnabled.addEventListener('change', ()=>{
+    defaultSpawnerSettings.personalSpaceEnabled = globalPersonalSpaceEnabled.checked;
+    globalPersonalSpaceRange.disabled = !defaultSpawnerSettings.personalSpaceEnabled;
+    spawners.forEach(s => { s.personalSpaceEnabled = defaultSpawnerSettings.personalSpaceEnabled; });
+  });
+  globalAlignmentEnabled.addEventListener('change', ()=>{
+    defaultSpawnerSettings.alignmentEnabled = globalAlignmentEnabled.checked;
+    globalAlignmentRange.disabled = !defaultSpawnerSettings.alignmentEnabled;
+    spawners.forEach(s => { s.alignmentEnabled = defaultSpawnerSettings.alignmentEnabled; });
+  });
+  globalImpatienceEnabled.addEventListener('change', ()=>{
+    defaultSpawnerSettings.impatienceEnabled = globalImpatienceEnabled.checked;
+    globalImpatienceRange.disabled = !defaultSpawnerSettings.impatienceEnabled;
+    spawners.forEach(s => { s.impatienceEnabled = defaultSpawnerSettings.impatienceEnabled; });
+  });
+  globalFollowFastEnabled.addEventListener('change', ()=>{
+    defaultSpawnerSettings.followFastEnabled = globalFollowFastEnabled.checked;
+    globalFollowFastRange.disabled = !defaultSpawnerSettings.followFastEnabled;
+    spawners.forEach(s => { s.followFastEnabled = defaultSpawnerSettings.followFastEnabled; });
+  });
+
+  // ---------- direction sign panel ----------
+  const signPanel = document.getElementById('signPanel');
+  const signRadiusRange = document.getElementById('signRadiusRange');
+  const signRadiusVal = document.getElementById('signRadiusVal');
+  const signApproachRange = document.getElementById('signApproachRange');
+  const signApproachVal = document.getElementById('signApproachVal');
+  const signShowVisibility = document.getElementById('signShowVisibility');
+  const signExitsList = document.getElementById('signExitsList');
+
+  function selectedSign(){
+    return signs.find(s => s.id === selectedSignId) || null;
+  }
+  function refreshSignExitsList(sign){
+    signExitsList.innerHTML = '';
+    if(exits.length === 0){
+      const p = document.createElement('div');
+      p.className = 'empty';
+      p.textContent = 'Aucune sortie créée (mode Sortie).';
+      signExitsList.appendChild(p);
+      return;
+    }
+    exits.forEach(ex => {
+      const row = document.createElement('label');
+      row.className = 'exit-row';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = sign.exits.includes(ex.id);
+      cb.addEventListener('change', ()=>{
+        if(cb.checked){
+          if(!sign.exits.includes(ex.id)) sign.exits.push(ex.id);
+        } else {
+          sign.exits = sign.exits.filter(id => id !== ex.id);
+        }
+      });
+      const txt = document.createElement('span');
+      txt.textContent = ex.label;
+      row.appendChild(cb);
+      row.appendChild(txt);
+      signExitsList.appendChild(row);
+    });
+  }
+  function openSignPanel(sign){
+    selectedSignId = sign.id;
+    closePanel();
+    closeExitPanel();
+    closeGlobalPanel();
+    signPanel.classList.add('show');
+    signRadiusRange.value = sign.radius;
+    signRadiusVal.textContent = Math.round(sign.radius) + 'px';
+    signApproachRange.value = sign.approachRadius;
+    signApproachVal.textContent = Math.round(sign.approachRadius) + 'px';
+    signShowVisibility.checked = sign.showVisibility;
+    refreshSignExitsList(sign);
+  }
+  function closeSignPanel(){
+    selectedSignId = null;
+    signPanel.classList.remove('show');
+  }
+  signRadiusRange.addEventListener('input', ()=>{
+    const sg = selectedSign();
+    if(!sg) return;
+    sg.radius = parseFloat(signRadiusRange.value);
+    signRadiusVal.textContent = Math.round(sg.radius) + 'px';
+  });
+  signApproachRange.addEventListener('input', ()=>{
+    const sg = selectedSign();
+    if(!sg) return;
+    sg.approachRadius = parseFloat(signApproachRange.value);
+    signApproachVal.textContent = Math.round(sg.approachRadius) + 'px';
+  });
+  signShowVisibility.addEventListener('change', ()=>{
+    const sg = selectedSign();
+    if(!sg) return;
+    sg.showVisibility = signShowVisibility.checked;
+  });
+  document.getElementById('signPanelClose').addEventListener('click', closeSignPanel);
+  document.getElementById('deleteSign').addEventListener('click', ()=>{
+    signs = signs.filter(sg => sg.id !== selectedSignId);
+    closeSignPanel();
+  });
+
+  // ---------- top buttons ----------
+  const btnPlay = document.getElementById('btnPlay');
+  btnPlay.addEventListener('click', ()=>{
+    playing = !playing;
+    btnPlay.textContent = playing ? '⏸ Pause' : '▶ Reprendre';
+  });
+  document.getElementById('btnClearParticles').addEventListener('click', ()=>{ particles = []; });
+  document.getElementById('btnClearAll').addEventListener('click', ()=>{
+    obstacles = []; spawners = []; exits = []; signs = []; particles = [];
+    closePanel(); closeExitPanel(); closeSignPanel(); closeGlobalPanel();
+  });
+
+  // ---------- save / load (JSON file) ----------
+  function exportScene(){
+    const data = {
+      version: 1,
+      obstacles: obstacles,
+      spawners: spawners.map(s => ({...s, acc: 0})),
+      exits: exits.map(ex => ({...ex, absorptions: []})),
+      signs: signs,
+      defaultSpawnerSettings: defaultSpawnerSettings,
+      nextSpawnerId: nextSpawnerId,
+      nextExitId: nextExitId,
+      nextSignId: nextSignId
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0,16).replace(/[:T]/g,'-');
+    a.href = url;
+    a.download = `simulation-foule-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function maxId(arr){
+    return arr.reduce((m,o)=>Math.max(m, o.id||0), 0);
+  }
+
+  function importScene(data){
+    obstacles = Array.isArray(data.obstacles) ? data.obstacles : [];
+    spawners = Array.isArray(data.spawners) ? data.spawners.map(s => ({...s, acc:0})) : [];
+    exits = Array.isArray(data.exits) ? data.exits.map(ex => ({...ex, absorptions:[]})) : [];
+    signs = Array.isArray(data.signs) ? data.signs : [];
+    if(data.defaultSpawnerSettings){
+      defaultSpawnerSettings = {...defaultSpawnerSettings, ...data.defaultSpawnerSettings};
+    }
+    nextSpawnerId = data.nextSpawnerId || (maxId(spawners)+1);
+    nextExitId = data.nextExitId || (maxId(exits)+1);
+    nextSignId = data.nextSignId || (maxId(signs)+1);
+    particles = [];
+    closePanel(); closeExitPanel(); closeSignPanel(); closeGlobalPanel();
+  }
+
+  document.getElementById('btnExport').addEventListener('click', exportScene);
+  document.getElementById('btnImport').addEventListener('click', ()=>{
+    document.getElementById('importFileInput').click();
+  });
+  document.getElementById('importFileInput').addEventListener('change', (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      try{
+        const data = JSON.parse(reader.result);
+        importScene(data);
+      } catch(err){
+        alert("Fichier invalide : impossible de charger ce plan.\n" + err.message);
+      }
+      e.target.value = ''; // allow re-importing the same file later
+    };
+    reader.readAsText(file);
+  });
+
+  setMode('obstacle');
+
+  // ---------- mouse interaction ----------
+  canvas.addEventListener('mousedown', (e)=>{
+    const p = mousePos(e);
+
+    if(mode === 'obstacle'){
+      drawingObstacle = {x1:p.x, y1:p.y, x2:p.x, y2:p.y};
+      return;
+    }
+
+    if(mode === 'spawn'){
+      const h = handleAt(p.x, p.y);
+      if(h){ draggingHandleId = h.id; return; }
+
+      const s = spawnerAt(p.x, p.y);
+      if(s){
+        draggingSpawnerId = s.id;
+        dragOffset = {x: p.x - s.x, y: p.y - s.y};
+        openPanel(s);
+        return;
+      }
+
+      const spawner = {
+        id: nextSpawnerId++,
+        x: p.x, y: p.y,
+        angle: 0,
+        rate: defaultSpawnerSettings.rate,
+        size: defaultSpawnerSettings.size,
+        speed: defaultSpawnerSettings.speed,
+        acc: 0,
+        exits: [],
+        color: '#9db4d8',
+        personalSpaceEnabled: defaultSpawnerSettings.personalSpaceEnabled,
+        personalSpace: defaultSpawnerSettings.personalSpace,
+        alignmentEnabled: defaultSpawnerSettings.alignmentEnabled,
+        alignmentDistance: defaultSpawnerSettings.alignmentDistance,
+        impatienceEnabled: defaultSpawnerSettings.impatienceEnabled,
+        impatienceDelay: defaultSpawnerSettings.impatienceDelay,
+        followFastEnabled: defaultSpawnerSettings.followFastEnabled,
+        followFastRadius: defaultSpawnerSettings.followFastRadius
+      };
+      spawners.push(spawner);
+      openPanel(spawner);
+      return;
+    }
+
+    if(mode === 'exit'){
+      const ex = exitAt(p.x, p.y);
+      if(ex){
+        draggingExitId = ex.id;
+        dragOffset = {x: p.x - ex.x, y: p.y - ex.y};
+        openExitPanel(ex);
+        return;
+      }
+      const newExitId = nextExitId++;
+      const newExit = {
+        id: newExitId,
+        x: p.x, y: p.y,
+        size: EXIT_SIZE,
+        label: 'Sortie ' + newExitId,
+        color: '#34d399',
+        absorptions: [],
+        visibilityRadius: 160,
+        showVisibility: true
+      };
+      exits.push(newExit);
+      openExitPanel(newExit);
+      if(selectedSpawnerId != null) refreshExitsList(selectedSpawner());
+      return;
+    }
+
+    if(mode === 'sign'){
+      const h = signHandleAt(p.x, p.y);
+      if(h){ draggingSignHandleId = h.id; return; }
+
+      const sg = signAt(p.x, p.y);
+      if(sg){
+        draggingSignId = sg.id;
+        dragOffset = {x: p.x - sg.x, y: p.y - sg.y};
+        openSignPanel(sg);
+        return;
+      }
+      const newSign = {
+        id: nextSignId++,
+        x: p.x, y: p.y,
+        angle: 0,
+        radius: 150,
+        approachRadius: 40,
+        exits: [],
+        showVisibility: true
+      };
+      signs.push(newSign);
+      openSignPanel(newSign);
+      return;
+    }
+
+    if(mode === 'delete'){
+      const o = obstacleAt(p.x, p.y);
+      if(o){ obstacles = obstacles.filter(x => x !== o); return; }
+      const s = spawnerAt(p.x, p.y);
+      if(s){
+        spawners = spawners.filter(x => x !== s);
+        if(selectedSpawnerId === s.id) closePanel();
+        return;
+      }
+      const ex = exitAt(p.x, p.y);
+      if(ex){
+        exits = exits.filter(x => x !== ex);
+        spawners.forEach(sp => { sp.exits = sp.exits.filter(id => id !== ex.id); });
+        signs.forEach(sg => { sg.exits = sg.exits.filter(id => id !== ex.id); });
+        if(selectedExitId === ex.id) closeExitPanel();
+        if(selectedSpawnerId != null) refreshExitsList(selectedSpawner());
+        if(selectedSignId != null) refreshSignExitsList(selectedSign());
+        return;
+      }
+      const sg = signAt(p.x, p.y);
+      if(sg){
+        signs = signs.filter(x => x !== sg);
+        if(selectedSignId === sg.id) closeSignPanel();
+      }
+    }
+  });
+
+  canvas.addEventListener('mousemove', (e)=>{
+    const p = mousePos(e);
+
+    if(drawingObstacle){
+      drawingObstacle.x2 = p.x;
+      drawingObstacle.y2 = p.y;
+    }
+    if(draggingHandleId != null){
+      const s = spawners.find(s=>s.id===draggingHandleId);
+      if(s) s.angle = Math.atan2(p.y - s.y, p.x - s.x);
+    }
+    if(draggingSpawnerId != null){
+      const s = spawners.find(s=>s.id===draggingSpawnerId);
+      if(s){ s.x = p.x - dragOffset.x; s.y = p.y - dragOffset.y; }
+    }
+    if(draggingExitId != null){
+      const ex = exits.find(e=>e.id===draggingExitId);
+      if(ex){ ex.x = p.x - dragOffset.x; ex.y = p.y - dragOffset.y; }
+    }
+    if(draggingSignHandleId != null){
+      const sg = signs.find(s=>s.id===draggingSignHandleId);
+      if(sg) sg.angle = Math.atan2(p.y - sg.y, p.x - sg.x);
+    }
+    if(draggingSignId != null){
+      const sg = signs.find(s=>s.id===draggingSignId);
+      if(sg){ sg.x = p.x - dragOffset.x; sg.y = p.y - dragOffset.y; }
+    }
+  });
+
+  window.addEventListener('mouseup', ()=>{
+    if(drawingObstacle){
+      const len = dist(drawingObstacle.x1,drawingObstacle.y1,drawingObstacle.x2,drawingObstacle.y2);
+      if(len > 8) obstacles.push({...drawingObstacle});
+      drawingObstacle = null;
+    }
+    draggingHandleId = null;
+    draggingSpawnerId = null;
+    draggingExitId = null;
+    draggingSignId = null;
+    draggingSignHandleId = null;
+  });
+
+  // ---------- physics ----------
+  const TAU = 0.45;              // relaxation time (steering toward desired velocity)
+  const OBST_RANGE = 26;         // px, obstacle influence range beyond radius
+  const OBST_STRENGTH = 5200;
+  const PEER_RANGE = 6;          // px, extra margin beyond combined radii
+  const PEER_STRENGTH = 3200;
+  const PERSONAL_STRENGTH = 900; // soft, weaker than hard peer collision -> naturally bypassed when crowded
+  const PERSONAL_CAP = 1500;     // caps combined personal-space push so it saturates instead of exploding
+  const ALIGN_COHESION_STRENGTH = 700;
+  const ALIGN_MATCH_RATE = 1.4;  // how fast velocity direction blends toward the local group's
+  const SAME_DIR_DOT = 0.5;      // cos threshold (~60°) to count a neighbor as "same direction"
+  const IMPATIENCE_RAMP = 2.5;       // seconds to go from just-triggered to fully impatient
+  const IMPATIENCE_RECOVER_MULT = 2; // blocked-time drains this much faster once moving freely again
+  const IMPATIENCE_PACE_THRESHOLD = 0.35; // below this fraction of intended speed counts as "blocked"
+  const IMPATIENCE_PUSH_BONUS = 1.8; // how much harder an impatient particle shoves its neighbors
+  const IMPATIENCE_BYPASS = 0.55;    // how much resistance an impatient particle itself ignores
+  const IMPATIENCE_FORWARD_PUSH = 900; // extra forward shove in the intended direction
+  const FOLLOW_MARGIN = 1.15;          // neighbor must be at least 15% faster to be worth following
+  const FOLLOW_STRENGTH = 750;         // pull toward the fastest qualifying neighbor
+  const FOLLOW_SPEED_BOOST_CAP = 1.35; // how far above own base speed drafting can push
+  const CELL = 42;
+
+  function buildGrid(){
+    const grid = new Map();
+    for(let i=0;i<particles.length;i++){
+      const p = particles[i];
+      const cx = Math.floor(p.x/CELL), cy = Math.floor(p.y/CELL);
+      const key = cx+','+cy;
+      if(!grid.has(key)) grid.set(key, []);
+      grid.get(key).push(i);
+    }
+    return grid;
+  }
+  function neighborsOf(grid, p){
+    const cx = Math.floor(p.x/CELL), cy = Math.floor(p.y/CELL);
+    const out = [];
+    for(let dx=-2;dx<=2;dx++) for(let dy=-2;dy<=2;dy++){
+      const arr = grid.get((cx+dx)+','+(cy+dy));
+      if(arr) out.push(...arr);
+    }
+    return out;
+  }
+
+  function step(now, dt){
+    // spawn
+    for(const s of spawners){
+      if(particles.length >= MAX_PARTICLES) break;
+      s.acc += s.rate * dt;
+      while(s.acc >= 1 && particles.length < MAX_PARTICLES){
+        s.acc -= 1;
+        const jitter = (Math.random()-0.5) * 0.35;
+        const a = s.angle + jitter;
+        const speed = s.speed * (0.85 + Math.random()*0.3);
+
+        const validExits = s.exits.filter(id => exits.some(e => e.id === id));
+        const targetExitId = validExits.length
+          ? validExits[Math.floor(Math.random()*validExits.length)]
+          : null;
+
+        particles.push({
+          x: s.x + Math.cos(s.angle)*(s.size+2),
+          y: s.y + Math.sin(s.angle)*(s.size+2),
+          vx: Math.cos(a)*speed*0.3,
+          vy: Math.sin(a)*speed*0.3,
+          r: s.size * (0.85 + Math.random()*0.3),
+          maxSpeed: speed,
+          dx: Math.cos(a), dy: Math.sin(a),
+          targetExitId,
+          reached: false,
+          color: s.color,
+          personalSpaceEnabled: s.personalSpaceEnabled,
+          personalSpace: s.personalSpace,
+          alignmentEnabled: s.alignmentEnabled,
+          alignmentDistance: s.alignmentDistance,
+          impatienceEnabled: s.impatienceEnabled,
+          impatienceDelay: s.impatienceDelay,
+          blockedTime: 0,
+          impatience: 0,
+          followFastEnabled: s.followFastEnabled,
+          followFastRadius: s.followFastRadius,
+          followBoost: 1,
+          ignoredSignId: null
+        });
+      }
+    }
+
+    const grid = buildGrid();
+
+    for(const p of particles){
+      let ax = 0, ay = 0;
+      const neigh = neighborsOf(grid, p);
+
+      // impatience: builds up while stuck well below intended pace, drains once moving freely
+      if(p.impatienceEnabled){
+        const paceRatio = p.maxSpeed > 0 ? Math.hypot(p.vx,p.vy)/p.maxSpeed : 1;
+        if(paceRatio < IMPATIENCE_PACE_THRESHOLD){
+          p.blockedTime += dt;
+        } else {
+          p.blockedTime = Math.max(0, p.blockedTime - dt*IMPATIENCE_RECOVER_MULT);
+        }
+        const over = p.blockedTime - p.impatienceDelay;
+        p.impatience = over > 0 ? Math.min(1, over/IMPATIENCE_RAMP) : 0;
+      } else {
+        p.impatience = 0;
+        p.blockedTime = 0;
+      }
+
+      // follow fast neighbors: draft behind the fastest nearby neighbor that's
+      // clearly outpacing this particle, temporarily allowing extra speed to keep up
+      if(p.followFastEnabled && p.followFastRadius > 0){
+        let bestQ = null, bestSpeed = 0;
+        const pSpeed = Math.hypot(p.vx,p.vy);
+        for(const idx of neigh){
+          const q = particles[idx];
+          if(q === p) continue;
+          const d = dist(p.x,p.y,q.x,q.y);
+          if(d > p.followFastRadius || d < 0.001) continue;
+          const qSpeed = Math.hypot(q.vx,q.vy);
+          if(qSpeed > pSpeed*FOLLOW_MARGIN && qSpeed > bestSpeed){
+            bestSpeed = qSpeed;
+            bestQ = q;
+          }
+        }
+        if(bestQ){
+          const dx = bestQ.x-p.x, dy = bestQ.y-p.y;
+          const d = Math.hypot(dx,dy) || 0.001;
+          ax += (dx/d) * FOLLOW_STRENGTH;
+          ay += (dy/d) * FOLLOW_STRENGTH;
+          const targetBoost = Math.min(FOLLOW_SPEED_BOOST_CAP, bestSpeed/p.maxSpeed);
+          p.followBoost = (p.followBoost||1) + (targetBoost - (p.followBoost||1)) * 0.3;
+        } else {
+          p.followBoost = Math.max(1, (p.followBoost||1) - dt*0.6);
+        }
+      } else {
+        p.followBoost = 1;
+      }
+
+      // direction signs: two cases.
+      // 1) particle already has a destination: if a sign advertising that same exit is
+      //    visible, approach the sign first, then follow its arrow once close enough.
+      // 2) particle has no destination yet: pick one up (or just a heading) from any
+      //    visible sign.
+      let signGuided = false;
+      if(signs.length){
+        if(p.targetExitId != null){
+          for(const sg of signs){
+            if(sg.id === p.ignoredSignId) continue;
+            if(!sg.exits.includes(p.targetExitId)) continue;
+            const d = dist(p.x,p.y,sg.x,sg.y);
+            if(d > sg.radius) continue;
+            if(!hasLineOfSight(sg.x,sg.y,p.x,p.y)) continue;
+            if(d > sg.approachRadius){
+              const ddx = sg.x-p.x, ddy = sg.y-p.y;
+              const dd = Math.hypot(ddx,ddy) || 0.001;
+              p.dx = ddx/dd; p.dy = ddy/dd;
+            } else {
+              p.dx = Math.cos(sg.angle);
+              p.dy = Math.sin(sg.angle);
+              p.ignoredSignId = sg.id; // now following it: won't be re-attracted until it meets another sign
+            }
+            signGuided = true;
+            break;
+          }
+        } else {
+          for(const sg of signs){
+            if(sg.id === p.ignoredSignId) continue;
+            const d = dist(p.x,p.y,sg.x,sg.y);
+            if(d > sg.radius) continue;
+            if(!hasLineOfSight(sg.x,sg.y,p.x,p.y)) continue;
+            const validSignExits = sg.exits.filter(id => exits.some(e => e.id === id));
+            if(validSignExits.length){
+              p.targetExitId = validSignExits[Math.floor(Math.random()*validSignExits.length)];
+            } else {
+              p.dx = Math.cos(sg.angle);
+              p.dy = Math.sin(sg.angle);
+            }
+            p.ignoredSignId = sg.id;
+            break;
+          }
+        }
+      }
+
+      // steer toward assigned exit only if it can actually be seen (within its own
+      // visibility radius, unobstructed); otherwise keep whatever heading is already
+      // trusted — a sign's direction if currently sign-guided, or the last known one
+      if(p.targetExitId != null){
+        const ex = exits.find(e => e.id === p.targetExitId);
+        if(ex){
+          const ddx = ex.x - p.x, ddy = ex.y - p.y;
+          const dd = Math.hypot(ddx,ddy) || 0.001;
+          const canSeeExit = dd <= ex.visibilityRadius && hasLineOfSight(ex.x,ex.y,p.x,p.y);
+          if(canSeeExit){
+            p.dx = ddx/dd; p.dy = ddy/dd;
+          }
+          // else: not visible — signGuided already set dx,dy this frame if a matching
+          // sign is in play; otherwise the particle simply keeps its last heading
+          if(dd < ex.size + p.r){
+            p.reached = true;
+            ex.absorptions.push(now);
+          }
+        } else {
+          p.targetExitId = null; // exit deleted meanwhile: keep last heading
+        }
+      }
+
+      // driving force toward desired direction/speed
+      const desVx = p.dx * p.maxSpeed * (p.followBoost||1);
+      const desVy = p.dy * p.maxSpeed * (p.followBoost||1);
+      ax += (desVx - p.vx) / TAU;
+      ay += (desVy - p.vy) / TAU;
+
+      // obstacle repulsion
+      for(const o of obstacles){
+        const cp = closestPointOnSegment(p.x,p.y,o.x1,o.y1,o.x2,o.y2);
+        const margin = p.r + OBST_RANGE;
+        if(cp.d < margin){
+          const d = Math.max(cp.d, 0.001);
+          let nx = (p.x - cp.x)/d, ny = (p.y - cp.y)/d;
+          if(cp.d < 0.01){ nx = 0; ny = -1; }
+          const overlap = margin - d;
+          const f = OBST_STRENGTH * (overlap/margin) * (overlap/margin);
+          ax += nx * f;
+          ay += ny * f;
+        }
+      }
+
+      // peer repulsion
+      for(const idx of neigh){
+        const q = particles[idx];
+        if(q === p) continue;
+        const dx = p.x - q.x, dy = p.y - q.y;
+        const d = Math.hypot(dx,dy) || 0.001;
+        const margin = p.r + q.r + PEER_RANGE;
+        if(d < margin){
+          const nx = dx/d, ny = dy/d;
+          const overlap = margin - d;
+          let f = PEER_STRENGTH * (overlap/margin);
+          f *= (1 + (q.impatience||0) * IMPATIENCE_PUSH_BONUS); // q shoves harder if impatient
+          f *= (1 - p.impatience * IMPATIENCE_BYPASS);          // p shrugs off some resistance if impatient
+          ax += nx * f;
+          ay += ny * f;
+        }
+      }
+
+      // personal space: soft preference for extra room, saturates (and so gets
+      // effectively bypassed) once surrounded from many sides at once
+      if(p.personalSpaceEnabled && p.personalSpace > 0){
+        let psx = 0, psy = 0;
+        for(const idx of neigh){
+          const q = particles[idx];
+          if(q === p) continue;
+          const dx = p.x - q.x, dy = p.y - q.y;
+          const d = Math.hypot(dx,dy) || 0.001;
+          const margin = p.r + q.r + p.personalSpace;
+          if(d < margin){
+            const overlap = margin - d;
+            const f = PERSONAL_STRENGTH * (overlap/margin);
+            psx += (dx/d) * f;
+            psy += (dy/d) * f;
+          }
+        }
+        const psMag = Math.hypot(psx,psy);
+        if(psMag > PERSONAL_CAP){ psx = psx/psMag*PERSONAL_CAP; psy = psy/psMag*PERSONAL_CAP; }
+        ax += psx * (1 - p.impatience*0.85);
+        ay += psy * (1 - p.impatience*0.85);
+      }
+
+      // alignment: steer toward, and match velocity with, nearby peers heading the same way
+      if(p.alignmentEnabled && p.alignmentDistance > 0){
+        let sumX=0, sumY=0, sumVx=0, sumVy=0, count=0;
+        for(const idx of neigh){
+          const q = particles[idx];
+          if(q === p) continue;
+          const dx = q.x - p.x, dy = q.y - p.y;
+          const d = Math.hypot(dx,dy);
+          if(d > p.alignmentDistance || d < 0.001) continue;
+          const sameDir = p.dx*q.dx + p.dy*q.dy; // dot product of intended directions
+          if(sameDir < SAME_DIR_DOT) continue;
+          sumX += q.x; sumY += q.y;
+          sumVx += q.vx; sumVy += q.vy;
+          count++;
+        }
+        if(count > 0){
+          const avgX = sumX/count, avgY = sumY/count;
+          const toAvgX = avgX - p.x, toAvgY = avgY - p.y;
+          const distToAvg = Math.hypot(toAvgX,toAvgY);
+          const closeRange = p.alignmentDistance * 0.5;
+          if(distToAvg > closeRange){
+            const f = ALIGN_COHESION_STRENGTH * Math.min(1,(distToAvg-closeRange)/closeRange);
+            ax += (toAvgX/distToAvg) * f;
+            ay += (toAvgY/distToAvg) * f;
+          }
+          const avgVx = sumVx/count, avgVy = sumVy/count;
+          ax += (avgVx - p.vx) * ALIGN_MATCH_RATE;
+          ay += (avgVy - p.vy) * ALIGN_MATCH_RATE;
+        }
+      }
+
+      // extra forward shove when impatient: physically pushing through the crowd
+      if(p.impatience > 0){
+        ax += p.dx * IMPATIENCE_FORWARD_PUSH * p.impatience;
+        ay += p.dy * IMPATIENCE_FORWARD_PUSH * p.impatience;
+      }
+
+      p.vx += ax * dt;
+      p.vy += ay * dt;
+
+      // speed cap
+      const sp = Math.hypot(p.vx,p.vy);
+      const cap = p.maxSpeed * (1.4 + p.impatience*0.3) * (p.followBoost||1);
+      if(sp > cap){ p.vx = p.vx/sp*cap; p.vy = p.vy/sp*cap; }
+
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+    }
+
+    resolveCollisions();
+
+    // cull off-screen or absorbed by an exit
+    particles = particles.filter(p =>
+      !p.reached &&
+      p.x > -60 && p.x < canvas.width+60 && p.y > -60 && p.y < canvas.height+60
+    );
+  }
+
+  // hard, non-negotiable collision resolution: guarantees particles never end up
+  // overlapping each other (nor pass through walls), regardless of how strong the
+  // steering forces (impatience, personal-space bypass, etc.) pushed them together.
+  function resolveCollisions(){
+    const ITER = 3;
+    for(let iter=0; iter<ITER; iter++){
+      // walls first: clamp any particle back out of an obstacle it's penetrating
+      for(const p of particles){
+        for(const o of obstacles){
+          const cp = closestPointOnSegment(p.x,p.y,o.x1,o.y1,o.x2,o.y2);
+          if(cp.d < p.r){
+            const d = Math.max(cp.d, 0.0001);
+            const nx = (p.x-cp.x)/d, ny = (p.y-cp.y)/d;
+            const push = p.r - d;
+            p.x += nx*push;
+            p.y += ny*push;
+          }
+        }
+      }
+
+      // particle vs particle: push overlapping pairs apart along their center line,
+      // split by relative size so the smaller one gives way more
+      const grid = buildGrid();
+      for(let i=0;i<particles.length;i++){
+        const p = particles[i];
+        const neigh = neighborsOf(grid, p);
+        for(const idx of neigh){
+          if(idx <= i) continue;
+          const q = particles[idx];
+          let dx = q.x-p.x, dy = q.y-p.y;
+          let d = Math.hypot(dx,dy);
+          const minDist = p.r+q.r;
+          if(d < minDist){
+            if(d < 0.0001){
+              const ang = Math.random()*Math.PI*2;
+              dx = Math.cos(ang); dy = Math.sin(ang); d = 1;
+            }
+            const nx = dx/d, ny = dy/d;
+            const overlap = minDist - d;
+            const totalR = p.r+q.r;
+            const pushP = overlap*(q.r/totalR);
+            const pushQ = overlap*(p.r/totalR);
+            p.x -= nx*pushP; p.y -= ny*pushP;
+            q.x += nx*pushQ; q.y += ny*pushQ;
+          }
+        }
+      }
+    }
+  }
+
+  // ---------- render ----------
+  function drawGrid(){
+    ctx.fillStyle = '#0b1220';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.strokeStyle = 'rgba(94,234,212,0.05)';
+    ctx.lineWidth = 1;
+    const step = 40;
+    ctx.beginPath();
+    for(let x=0;x<canvas.width;x+=step){ ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); }
+    for(let y=0;y<canvas.height;y+=step){ ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); }
+    ctx.stroke();
+  }
+
+  // shadowcasts a radius from (cx,cy) against obstacles, returning the visible-area polygon
+  function computeVisibilityPolygon(cx, cy, radius, steps){
+    const pts = [];
+    for(let i=0;i<steps;i++){
+      const ang = (i/steps) * Math.PI * 2;
+      const dx = Math.cos(ang), dy = Math.sin(ang);
+      const farX = cx + dx*radius, farY = cy + dy*radius;
+      let minT = 1;
+      for(const o of obstacles){
+        const t = segSegIntersectT(cx,cy,farX,farY, o.x1,o.y1,o.x2,o.y2);
+        if(t != null && t < minT) minT = t;
+      }
+      pts.push({ x: cx + dx*radius*minT, y: cy + dy*radius*minT });
+    }
+    return pts;
+  }
+
+  function draw(now){
+    drawGrid();
+
+    // obstacles
+    ctx.lineCap = 'round';
+    for(const o of obstacles){
+      ctx.strokeStyle = 'rgba(94,234,212,0.9)';
+      ctx.shadowColor = 'rgba(94,234,212,0.6)';
+      ctx.shadowBlur = 8;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(o.x1,o.y1); ctx.lineTo(o.x2,o.y2);
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+
+    if(drawingObstacle){
+      ctx.strokeStyle = 'rgba(94,234,212,0.5)';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([6,5]);
+      ctx.beginPath();
+      ctx.moveTo(drawingObstacle.x1,drawingObstacle.y1);
+      ctx.lineTo(drawingObstacle.x2,drawingObstacle.y2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // particles
+    for(const p of particles){
+      const speedNow = Math.hypot(p.vx,p.vy);
+      const speedRatio = Math.min(1, speedNow / (p.maxSpeed*1.2));
+      ctx.globalAlpha = 0.55 + speedRatio*0.45;
+      ctx.fillStyle = p.color || '#9db4d8';
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      // discreet outline: green when at intended speed, grading to red when slower than planned
+      const onPaceRatio = Math.max(0, Math.min(1, speedNow / p.maxSpeed));
+      const hue = onPaceRatio * 120; // 0=red, 120=green
+      ctx.strokeStyle = `hsla(${hue},75%,55%,0.85)`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,p.r+1.4,0,Math.PI*2);
+      ctx.stroke();
+
+      // discreet extra ring that fades in as impatience builds up
+      if(p.impatience > 0.05){
+        ctx.strokeStyle = `rgba(251,146,60,${p.impatience*0.7})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(p.x,p.y,p.r+3.2,0,Math.PI*2);
+        ctx.stroke();
+      }
+    }
+
+    // exits
+    for(const ex of exits){
+      const selected = ex.id === selectedExitId;
+
+      if(ex.showVisibility){
+        const poly = computeVisibilityPolygon(ex.x, ex.y, ex.visibilityRadius, 56);
+        ctx.beginPath();
+        poly.forEach((pt,i)=>{ i===0 ? ctx.moveTo(pt.x,pt.y) : ctx.lineTo(pt.x,pt.y); });
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(52,211,153,0.07)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(52,211,153,0.3)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3,4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      ctx.save();
+      ctx.translate(ex.x, ex.y);
+      ctx.rotate(Math.PI/4);
+      ctx.fillStyle = ex.color;
+      ctx.globalAlpha = 0.85;
+      ctx.strokeStyle = ex.color;
+      ctx.globalAlpha = selected ? 0.55 : 0.3;
+      ctx.lineWidth = selected ? 6 : 4;
+      const s2 = ex.size;
+      ctx.beginPath();
+      ctx.roundRect(-s2, -s2, s2*2, s2*2, 4);
+      ctx.globalAlpha = 0.85;
+      ctx.fill();
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.restore();
+
+      // throughput over the last 10s, scaled to people/min
+      ex.absorptions = ex.absorptions.filter(t => now - t <= THROUGHPUT_WINDOW);
+      const perMin = Math.round(ex.absorptions.length * (60000/THROUGHPUT_WINDOW));
+
+      // label pill
+      ctx.font = '11px ' + getComputedStyle(document.body).getPropertyValue('--mono');
+      const line1 = ex.label;
+      const line2 = perMin + ' /min';
+      const textW = Math.max(ctx.measureText(line1).width, ctx.measureText(line2).width);
+      const padX = 7;
+      const boxW = textW + padX*2, boxH = 30;
+      const bx = ex.x - boxW/2, by = ex.y + ex.size + 8;
+      ctx.fillStyle = 'rgba(11,18,32,0.85)';
+      ctx.strokeStyle = ex.color;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.roundRect(bx, by, boxW, boxH, 8);
+      ctx.fill();
+      ctx.stroke();
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = ex.color;
+      ctx.fillText(line1, ex.x, by + 10);
+      ctx.fillStyle = 'rgba(219,228,243,0.9)';
+      ctx.fillText(line2, ex.x, by + 22);
+      ctx.textAlign = 'start';
+      ctx.textBaseline = 'alphabetic';
+    }
+
+    // direction signs
+    for(const sg of signs){
+      const selected = sg.id === selectedSignId;
+
+      if(sg.showVisibility){
+        const poly = computeVisibilityPolygon(sg.x, sg.y, sg.radius, 56);
+        ctx.beginPath();
+        poly.forEach((pt,i)=>{ i===0 ? ctx.moveTo(pt.x,pt.y) : ctx.lineTo(pt.x,pt.y); });
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(167,139,250,0.08)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(167,139,250,0.35)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3,4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.beginPath();
+        ctx.arc(sg.x, sg.y, sg.approachRadius, 0, Math.PI*2);
+        ctx.strokeStyle = 'rgba(167,139,250,0.5)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+
+      // post + flag icon
+      ctx.strokeStyle = selected ? 'rgba(167,139,250,0.95)' : 'rgba(167,139,250,0.75)';
+      ctx.lineWidth = selected ? 2.5 : 1.5;
+      ctx.beginPath();
+      ctx.arc(sg.x, sg.y, 9, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(167,139,250,0.85)';
+      ctx.beginPath();
+      ctx.arc(sg.x, sg.y, 4, 0, Math.PI*2);
+      ctx.fill();
+
+      // direction arrow
+      const hx = sg.x + Math.cos(sg.angle)*HANDLE_DIST;
+      const hy = sg.y + Math.sin(sg.angle)*HANDLE_DIST;
+      ctx.strokeStyle = 'rgba(167,139,250,0.9)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(sg.x,sg.y);
+      ctx.lineTo(hx,hy);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(hx,hy,5,0,Math.PI*2);
+      ctx.fillStyle = '#a78bfa';
+      ctx.fill();
+    }
+
+    // spawners
+    for(const s of spawners){
+      const selected = s.id === selectedSpawnerId;
+      ctx.beginPath();
+      ctx.arc(s.x,s.y,s.size+6,0,Math.PI*2);
+      ctx.strokeStyle = selected ? 'rgba(251,146,60,0.9)' : 'rgba(251,146,60,0.4)';
+      ctx.lineWidth = selected ? 2.5 : 1.5;
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.arc(s.x,s.y,s.size,0,Math.PI*2);
+      ctx.fillStyle = 'rgba(251,146,60,0.85)';
+      ctx.fill();
+
+      // direction arrow
+      const hx = s.x + Math.cos(s.angle)*HANDLE_DIST;
+      const hy = s.y + Math.sin(s.angle)*HANDLE_DIST;
+      ctx.strokeStyle = 'rgba(251,146,60,0.9)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(s.x,s.y);
+      ctx.lineTo(hx,hy);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(hx,hy,5,0,Math.PI*2);
+      ctx.fillStyle = '#fb923c';
+      ctx.fill();
+    }
+  }
+
+  // ---------- main loop ----------
+  let last = performance.now();
+  function loop(now){
+    const dt = Math.min(0.033, (now-last)/1000);
+    last = now;
+    if(playing) step(now, dt);
+    draw(now);
+    statsEl.innerHTML = `<b>${particles.length}</b> personnages · <b>${spawners.length}</b> spawns · <b>${exits.length}</b> sorties · <b>${signs.length}</b> panneaux · <b>${obstacles.length}</b> obstacles`;
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
